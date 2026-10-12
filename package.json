@@ -1,0 +1,24 @@
+{
+  "name": "local-token-speed-v1",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "bun run setup.ts",
+    "verify": "bun run verify.ts",
+    "uninstall": "bun run uninstall.ts",
+    "typecheck": "tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --lib es2023,dom --types bun config.ts disco.ts entorno.ts informe.ts metrics.ts context.ts live.ts refresh.ts tokenizer.ts setup.ts verify.ts uninstall.ts"
+  },
+  "opencodeHost": {
+    "tested": "1.19.0",
+    "min": "1.19.0",
+    "max": "1.99.99"
+  },
+  "dependencies": {
+    "gpt-tokenizer": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}
