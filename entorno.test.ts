@@ -15,10 +15,10 @@ function dirAux(): string {
   return dir
 }
 
-const salida = `home       /home/samwsl
-data       /home/samwsl/.local/share/opencode
-config     /home/samwsl/.config/opencode
-cache      /home/samwsl/.cache/opencode
+const salida = `home       /home/ejemplo
+data       /home/ejemplo/.local/share/opencode
+config     /home/ejemplo/.config/opencode
+cache      /home/ejemplo/.cache/opencode
 `
 
 const ok = (stdout: string) => () => ({ ok: true, stdout })
@@ -27,10 +27,10 @@ const falla = () => () => ({ ok: false, stdout: "", error: "ENOENT" })
 describe("parseDebugPaths", () => {
   test("extrae cada clave con su valor", () => {
     expect(parseDebugPaths(salida)).toEqual({
-      home: "/home/samwsl",
-      data: "/home/samwsl/.local/share/opencode",
-      config: "/home/samwsl/.config/opencode",
-      cache: "/home/samwsl/.cache/opencode",
+      home: "/home/ejemplo",
+      data: "/home/ejemplo/.local/share/opencode",
+      config: "/home/ejemplo/.config/opencode",
+      cache: "/home/ejemplo/.cache/opencode",
     })
   })
 
