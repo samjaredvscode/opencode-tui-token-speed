@@ -1,6 +1,8 @@
+import { realpathSync } from "node:fs"
+import { isAbsolute, resolve, sep } from "node:path"
 import { spawnSync } from "node:child_process"
 
-export type Resultado = { ok: boolean; stdout: string; stderr?: string; status?: number }
+export type Resultado = { ok: boolean; stdout: string; stderr?: string; status?: number; error?: string }
 
 export type Run = (cmd: string[]) => Resultado
 
@@ -18,6 +20,7 @@ export const ejecutar = (cmd: string[], opciones: { cwd?: string } = {}): Result
     stdout: String(res.stdout ?? ""),
     stderr: String(res.stderr ?? ""),
     status: typeof res.status === "number" ? res.status : undefined,
+    error: res.error ? String((res.error as NodeJS.ErrnoException).code ?? res.error.message) : undefined,
   }
 }
 
@@ -33,20 +36,42 @@ export function parseDebugPaths(stdout: string): Record<string, string> {
   return rutas
 }
 
+// La salida del host se trata como dato no confiable: se exige una ruta absoluta y se
+// resuelve a una forma estable, sin salto de directorio pendiente. Un «opencode» antes en
+// el PATH puede decidir dónde escribe esta herramienta, así que el instalador muestra
+// siempre la ruta elegida en pantalla.
+export function rutaSegura(valor: string | undefined): string | null {
+  if (!valor) return null
+  const candidata = valor.trim()
+  if (!isAbsolute(candidata)) return null
+  const normalizada = resolve(candidata)
+  return normalizada === sep ? null : normalizada
+}
+
 // El host es la autoridad sobre dónde vive su configuración; el resto es respaldo
 // para cuando todavía no se puede ejecutar (instalación en un equipo nuevo).
 export function resolveConfigDir(run: Run, env: Entorno): string {
-  let declarada: string | undefined
-  try {
-    const resultado = run(["opencode", "debug", "paths"])
-    declarada = resultado.ok ? parseDebugPaths(resultado.stdout).config : undefined
-  } catch (error) {
-    // El host no se puede ejecutar (no está instalado o no está en el PATH):
-    // se continúa con el respaldo en lugar de abortar la instalación.
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
-  }
+  const declarada = rutaSegura(parseDebugPaths(run(["opencode", "debug", "paths"]).stdout).config)
   if (declarada) return declarada
-  if (env.XDG_CONFIG_HOME) return `${env.XDG_CONFIG_HOME.replace(/\/+$/, "")}/opencode`
-  if (env.HOME) return `${env.HOME.replace(/\/+$/, "")}/.config/opencode`
+  if (env.XDG_CONFIG_HOME) return joinPath(env.XDG_CONFIG_HOME, "opencode")
+  if (env.HOME) return joinPath(env.HOME, ".config", "opencode")
   throw new Error("No se puede determinar la ruta de configuración: faltan HOME y XDG_CONFIG_HOME.")
+}
+
+function joinPath(base: string, ...resto: string[]): string {
+  return resolve(base.replace(/\/+$/, ""), ...resto)
+}
+
+// La entrada de tui.json es relativa al fichero de configuración: solo se cumple si el
+// repositorio está exactamente donde el host va a buscarlo. Comparar por realpath cubre
+// el caso de un clon a través de un enlace simbólico.
+export function mismaRuta(izquierda: string, derecha: string): boolean {
+  const canonica = (ruta: string): string => {
+    try {
+      return realpathSync(ruta)
+    } catch {
+      return resolve(ruta)
+    }
+  }
+  return canonica(izquierda) === canonica(derecha)
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { NATIVE_CONTEXT, PLUGIN_ENTRY, findUnknownKeys, isHostSupported, parseVersion } from "./config"
+import { NATIVE_CONTEXT, contarEntradas, findUnknownKeys, isHostSupported, parseVersion } from "./config"
 import { leerConfig, leerRangoHost } from "./disco"
 import { ejecutar, resolveConfigDir } from "./entorno"
 import { imprimir, type Linea } from "./informe"
@@ -11,18 +11,25 @@ const args = process.argv.slice(2)
 const sinTests = args.includes("--skip-tests")
 
 if (args.includes("--help")) {
-  console.log("Uso: bun run verify [--skip-tests]\n\n  --skip-tests no ejecuta la batería de pruebas")
+  console.log("Uso: bun run verify [--skip-tests]\n\n  --skip-tests no ejecuta la batería de pruebas de este repositorio")
   process.exit(0)
 }
 
 const lineas: Linea[] = []
-const dirConfig = resolveConfigDir(ejecutar, process.env)
+
+let dirConfig: string
+try {
+  dirConfig = resolveConfigDir(ejecutar, process.env)
+} catch (error) {
+  lineas.push({ estado: "fallo", titulo: "No se pudo localizar la configuración de OpenCode", detalle: error instanceof Error ? error.message : String(error) })
+  process.exit(imprimir(lineas))
+}
 const rutaTui = join(dirConfig, "tui.json")
 
 const rango = leerRangoHost(join(DIR, "package.json"))
 const version = ejecutar(["opencode", "--version"])
 if (!version.ok) {
-  lineas.push({ estado: "fallo", titulo: "opencode no está disponible en el PATH" })
+  lineas.push({ estado: "fallo", titulo: "opencode no está disponible en el PATH", detalle: version.error })
 } else {
   const detectada = parseVersion(version.stdout.trim().split("\n").pop() ?? "")
   const texto = detectada ? `${detectada.major}.${detectada.minor}.${detectada.patch}` : "desconocida"
@@ -34,9 +41,7 @@ if (!version.ok) {
   lineas.push(linea)
 }
 
-if (!rango) {
-  lineas.push({ estado: "aviso", titulo: "package.json no declara un rango de host válido" })
-}
+if (!rango) lineas.push({ estado: "aviso", titulo: "package.json no declara un rango de host válido" })
 
 lineas.push(existsSync(join(DIR, "node_modules", "gpt-tokenizer"))
   ? { estado: "ok", titulo: "gpt-tokenizer instalado" }
@@ -47,18 +52,13 @@ if (!existsSync(rutaTui)) {
 } else {
   try {
     const config = leerConfig(rutaTui)
-    const entradas = Array.isArray(config.plugin) ? config.plugin : []
-    const veces = entradas.filter((item) => {
-      const ruta = typeof item === "string" ? item : Array.isArray(item) ? item[0] : null
-      return ruta === PLUGIN_ENTRY
-    }).length
+    const veces = contarEntradas(config)
     lineas.push(veces === 1
       ? { estado: "ok", titulo: "Entrada del plugin registrada una sola vez" }
       : { estado: "fallo", titulo: `La entrada del plugin aparece ${veces} veces en tui.json`, detalle: "Sin cambio: se cuelga dos veces o no se cuelga." })
 
     const habilitados = config.plugin_enabled as Record<string, unknown> | undefined
-    const override = habilitados?.[NATIVE_CONTEXT]
-    lineas.push(override === false
+    lineas.push(habilitados?.[NATIVE_CONTEXT] === false
       ? { estado: "ok", titulo: "Indicador de contexto nativo desactivado (sin duplicado)" }
       : { estado: "fallo", titulo: "El indicador de contexto nativo no está desactivado", detalle: "Aparecerán los dos contadores; ejecuta bun run setup." })
 

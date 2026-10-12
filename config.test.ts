@@ -13,6 +13,7 @@ import {
   removePluginEntry,
   renderTuiConfig,
   restoreNativeContext,
+  contarEntradas,
   type HostRange,
 } from "./config"
 
@@ -101,6 +102,36 @@ describe("removePluginEntry / restoreNativeContext", () => {
   test("elimina plugin_enabled cuando solo contenía el contexto nativo", () => {
     const next = restoreNativeContext({ plugin_enabled: { [NATIVE_CONTEXT]: false } })
     expect("plugin_enabled" in next).toBe(false)
+  })
+
+  test("deja intacto un valor del contexto nativo que no puso este plugin", () => {
+    const next = restoreNativeContext({ plugin_enabled: { [NATIVE_CONTEXT]: true } })
+    expect(next.plugin_enabled).toEqual({ [NATIVE_CONTEXT]: true })
+  })
+})
+
+describe("contarEntradas", () => {
+  test("cuenta la forma de cadena", () => {
+    expect(contarEntradas({ plugin: ["./otro/tui.tsx", PLUGIN_ENTRY] })).toBe(1)
+  })
+
+  test("cuenta la forma con opciones sin duplicarla", () => {
+    expect(contarEntradas({ plugin: [[PLUGIN_ENTRY, { flag: true }]] })).toBe(1)
+  })
+
+  test("cuenta cada aparición, aunque esté repetida", () => {
+    expect(contarEntradas({ plugin: [PLUGIN_ENTRY, PLUGIN_ENTRY] })).toBe(2)
+  })
+
+  test("devuelve cero si no hay lista de plugins", () => {
+    expect(contarEntradas({})).toBe(0)
+    expect(contarEntradas({ plugin: "nope" })).toBe(0)
+  })
+
+  test("es el mismo criterio que usa la fusión al deduplicar", () => {
+    const config = { plugin: [PLUGIN_ENTRY, PLUGIN_ENTRY, "./otro/tui.tsx"] }
+    expect(contarEntradas(config)).toBe(2)
+    expect(contarEntradas(mergePluginEntry(config))).toBe(1)
   })
 })
 

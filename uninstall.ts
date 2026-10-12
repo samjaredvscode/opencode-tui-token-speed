@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { rmSync } from "node:fs"
+import { existsSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import { removePluginEntry, restoreNativeContext } from "./config"
+import { mismoConfig, removePluginEntry, restoreNativeContext } from "./config"
 import { escribirConfig, leerConfig } from "./disco"
 import { ejecutar, resolveConfigDir } from "./entorno"
 import { imprimir, type Linea } from "./informe"
@@ -17,26 +17,49 @@ if (args.includes("--help")) {
 }
 
 const lineas: Linea[] = []
-const dirConfig = resolveConfigDir(ejecutar, process.env)
+let dirConfig: string
+try {
+  dirConfig = resolveConfigDir(ejecutar, process.env)
+} catch (error) {
+  lineas.push({ estado: "fallo", titulo: "No se pudo localizar la configuración de OpenCode", detalle: error instanceof Error ? error.message : String(error) })
+  process.exit(imprimir(lineas))
+}
 const rutaTui = join(dirConfig, "tui.json")
 
 try {
-  const config = leerConfig(rutaTui)
-  const fusionado = restoreNativeContext(removePluginEntry(config))
+  const original = leerConfig(rutaTui)
+  const fusionado = restoreNativeContext(removePluginEntry(original))
   const escritura = escribirConfig(rutaTui, fusionado, { dryRun })
-  lineas.push(!escritura.cambio
-    ? { estado: "ok", titulo: "tui.json no tenía nada de este plugin" }
-    : escritura.escrito
-      ? { estado: "ok", titulo: `Desregistrado de ${rutaTui}`, detalle: `Copia del anterior en ${escritura.respaldo}` }
-      : { estado: "aviso", titulo: `Simulación: se escribiría ${rutaTui}` })
-  lineas.push({ estado: "ok", titulo: "Indicador de contexto nativo restituido" })
+
+  if (!escritura.cambio) {
+    lineas.push({ estado: "ok", titulo: "tui.json no contenía nada de este plugin" })
+  } else if (escritura.escrito) {
+    lineas.push({
+      estado: "ok",
+      titulo: Object.keys(fusionado).length === 0 ? `tui.json quedaba vacío: se ha eliminado ${rutaTui}` : `Desregistrado de ${rutaTui}`,
+      detalle: existsSync(`${rutaTui}.bak`) ? `Copia del contenido previo en ${rutaTui}.bak` : undefined,
+    })
+  } else {
+    lineas.push({ estado: "aviso", titulo: `Simulación: se escribiría ${rutaTui}` })
+  }
+
+  // Solo se afirma lo que cambió: en --dry-run no se ha restituido nada todavía.
+  const contextoRestituido = !mismoConfig(original, fusionado)
+  if (contextoRestituido) {
+    lineas.push({
+      estado: dryRun ? "aviso" : "ok",
+      titulo: dryRun ? "El indicador de contexto nativo quedaría restituido" : "Indicador de contexto nativo restituido",
+    })
+  }
 } catch (error) {
   lineas.push({ estado: "fallo", titulo: `No se pudo desregistrar de ${rutaTui}`, detalle: error instanceof Error ? error.message : String(error) })
 }
 
 if (purgar) {
   const destino = join(DIR, "node_modules")
-  if (dryRun) {
+  if (!existsSync(join(DIR, "package.json"))) {
+    lineas.push({ estado: "fallo", titulo: `No se borra ${destino}: el directorio no parece el plugin`, detalle: `Falta ${join(DIR, "package.json")}` })
+  } else if (dryRun) {
     lineas.push({ estado: "aviso", titulo: `Simulación: se borraría ${destino}` })
   } else {
     rmSync(destino, { recursive: true, force: true })

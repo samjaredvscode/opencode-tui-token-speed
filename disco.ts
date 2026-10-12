@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { parseTuiConfig, mismoConfig, renderTuiConfig, parseVersion, type HostRange, type TuiConfig } from "./config"
 
@@ -16,6 +16,14 @@ export function leerRangoHost(rutaPaquete: string): HostRange | null {
 export function leerConfig(ruta: string): TuiConfig {
   if (!existsSync(ruta)) return {}
   return parseTuiConfig(readFileSync(ruta, "utf-8"), ruta)
+}
+
+// writeFileSync y copyFileSync siguen enlaces simbólicos y truncan en el sitio: un tui.json
+// plantado como enlace escribiría fuera del directorio de configuración.
+function exigirFicheroReal(ruta: string, que: string): void {
+  if (existsSync(ruta) && lstatSync(ruta).isSymbolicLink()) {
+    throw new Error(`${ruta} es un enlace simbólico. Se niega a escribir ${que} a través de él.`)
+  }
 }
 
 export type Escritura = {
@@ -48,9 +56,22 @@ export function escribirConfig(
   const resultado: Escritura = { cambio: true, escrito: false, respaldo }
   if (opciones.dryRun) return resultado
 
-  mkdirSync(dirname(ruta), { recursive: true })
-  if (actual !== null) copyFileSync(ruta, respaldo)
-  writeFileSync(ruta, contenido)
+  const directorio = dirname(ruta)
+  if (!existsSync(directorio) || !statSync(directorio).isDirectory()) {
+    throw new Error(`${directorio} no existe como directorio. Instala y arranca OpenCode antes de ejecutar esta herramienta.`)
+  }
+  exigirFicheroReal(ruta, "la configuración")
+  exigirFicheroReal(respaldo, "la copia de seguridad")
+
+  // La primera copia es la del usuario: no se pisa, o un setup seguido de un uninstall
+  // dejarían como único original el estado generado por la herramienta.
+  if (actual !== null && !existsSync(respaldo)) copyFileSync(ruta, respaldo)
+
+  // Escribir en un temporal del mismo directorio y renombrar deja el destino intacto o
+  // entero: nunca un tui.json a medias que impida arrancar el host.
+  const temporal = `${ruta}.tmp-${process.pid}`
+  writeFileSync(temporal, contenido)
+  renameSync(temporal, ruta)
   resultado.escrito = true
   return resultado
 }

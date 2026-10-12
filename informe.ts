@@ -4,7 +4,7 @@ export type Linea = { estado: Estado; titulo: string; detalle?: string }
 
 export type Resumen = { ok: number; aviso: number; fallo: number }
 
-const MARCA: Record<Estado, string> = { ok: "✓", aviso: "!", fallo: "✗" }
+const MARCA: Record<Estado, string> = { ok: "OK", aviso: "AVISO", fallo: "FALLO" }
 
 export function resume(lineas: readonly Linea[]): Resumen {
   return {

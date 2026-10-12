@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { leerConfig, escribirConfig, leerRangoHost } from "./disco"
 
 const temporales: string[] = []
 
-function rutaAux(): string {
+function dirAux(): string {
   const dir = mkdtempSync(join(tmpdir(), "token-speed-"))
   temporales.push(dir)
-  return join(dir, "tui.json")
+  return dir
+}
+
+function rutaAux(): string {
+  return join(dirAux(), "tui.json")
 }
 
 afterEach(() => {
@@ -122,9 +126,53 @@ describe("escribirConfig", () => {
     expect(resultado.respaldo).toBe(`${ruta}.bak`)
   })
 
-  test("crea el directorio si la configuración global aún no existe", () => {
-    const ruta = join(rutaAux(), "anidado", "tui.json")
+  test("no crea directorios intermedios: el de configuración debe existir de antemano", () => {
+    const padre = dirAux()
+    const ruta = join(padre, "no-existe", "tui.json")
+    expect(() => escribirConfig(ruta, { theme: "system" })).toThrow(/directorio/)
+    expect(existsSync(join(padre, "no-existe"))).toBe(false)
+  })
+})
+
+describe("escribirConfig — seguridad del fichero del usuario", () => {
+  test("no pisa una copia de seguridad anterior", () => {
+    const ruta = rutaAux()
     escribirConfig(ruta, { theme: "system" })
-    expect(readFileSync(ruta, "utf-8")).toContain("system")
+    escribirConfig(ruta, { theme: "dracula" })
+    escribirConfig(ruta, { theme: "nord" })
+    expect(readFileSync(`${ruta}.bak`, "utf-8")).toBe('{\n  "theme": "system"\n}\n')
+  })
+
+  test("no deja ficheros temporales tras escribir", () => {
+    const dir = dirAux()
+    escribirConfig(join(dir, "tui.json"), { theme: "system" })
+    expect(readdirSync(dir)).toEqual(["tui.json"])
+  })
+
+  test("se niega a escribir a través de un enlace simbólico", () => {
+    const dir = dirAux()
+    const ruta = join(dir, "tui.json")
+    const objetivo = join(dir, "otro.json")
+    writeFileSync(objetivo, '{"theme":"original"}')
+    symlinkSync(objetivo, ruta)
+    expect(() => escribirConfig(ruta, { theme: "system" })).toThrow(/enlace simbólico/)
+    expect(readFileSync(objetivo, "utf-8")).toBe('{"theme":"original"}')
+  })
+
+  test("se niega a usar un enlace simbólico como copia de seguridad", () => {
+    const dir = dirAux()
+    const ruta = join(dir, "tui.json")
+    const objetivo = join(dir, "secreto")
+    writeFileSync(objetivo, "contenido importante")
+    symlinkSync(objetivo, `${ruta}.bak`)
+    expect(() => escribirConfig(ruta, { theme: "system" })).toThrow(/enlace simbólico/)
+    expect(readFileSync(objetivo, "utf-8")).toBe("contenido importante")
+  })
+
+  test("no crea el directorio de configuración si no existe", () => {
+    const padre = dirAux()
+    const ruta = join(padre, "no-existe", "tui.json")
+    expect(() => escribirConfig(ruta, { theme: "system" })).toThrow(/directorio/)
+    expect(existsSync(join(padre, "no-existe"))).toBe(false)
   })
 })

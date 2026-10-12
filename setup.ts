@@ -8,10 +8,11 @@ import {
   mergePluginEnabled,
   mergePluginEntry,
   parseVersion,
+  type TuiConfig,
 } from "./config"
 import { escribirConfig, leerConfig, leerRangoHost } from "./disco"
-import { ejecutar, resolveConfigDir } from "./entorno"
-import { imprimir, type Linea } from "./informe"
+import { ejecutar, mismaRuta, resolveConfigDir } from "./entorno"
+import { imprimir, resume, type Linea } from "./informe"
 
 const DIR = import.meta.dir
 const args = process.argv.slice(2)
@@ -19,71 +20,114 @@ const dryRun = args.includes("--dry-run")
 const saltarDeps = args.includes("--skip-deps")
 
 if (args.includes("--help")) {
-  console.log("Uso: bun run setup [--dry-run] [--skip-deps]\n\n  --dry-run   muestra qué haría sin escribir nada\n  --skip-deps no ejecuta bun install")
+  console.log([
+    "Uso: bun run setup [--dry-run] [--skip-deps]",
+    "",
+    "  --dry-run   no escribe en tui.json (sí ejecuta bun install salvo --skip-deps)",
+    "  --skip-deps no ejecuta bun install",
+  ].join("\n"))
   process.exit(0)
 }
 
 const lineas: Linea[] = []
-const dirConfig = resolveConfigDir(ejecutar, process.env)
+
+function anota(estado: Linea["estado"], titulo: string, detalle?: string) {
+  lineas.push({ estado, titulo, ...(detalle ? { detalle } : {}) })
+}
+
+let dirConfig: string
+try {
+  dirConfig = resolveConfigDir(ejecutar, process.env)
+} catch (error) {
+  anota("fallo", "No se pudo localizar la configuración de OpenCode", error instanceof Error ? error.message : String(error))
+  process.exit(imprimir(lineas))
+}
 const rutaTui = join(dirConfig, "tui.json")
 
-lineas.push({ estado: "ok", titulo: `Configuración del host: ${dirConfig}` })
+// La entrada que se registra es relativa a tui.json: si el repositorio no está donde el
+// host buscará, el host no lo encontrará y la instalación sería un falso éxito.
+const esperado = join(dirConfig, "tui-plugins", "token-speed")
+if (mismaRuta(DIR, esperado)) {
+  anota("ok", `Plugin donde el host lo buscará: ${esperado}`)
+} else {
+  anota("fallo", "El repositorio no está donde el host buscará el plugin",
+    `Está en ${DIR} y el host sólo resuelve ${esperado}. Muévelo allí o ajusta la entrada de tui.json a mano.`)
+}
+
+anota("ok", `Configuración del host: ${dirConfig}`)
 
 const rango = leerRangoHost(join(DIR, "package.json"))
 const version = ejecutar(["opencode", "--version"])
 if (!version.ok) {
-  lineas.push({ estado: "aviso", titulo: "No se pudo consultar la versión del host", detalle: (version.stderr ?? "").trim() || "opencode no está en el PATH" })
+  anota("aviso", "No se pudo consultar la versión del host",
+    version.error ? `opencode falló (${version.error}). Continúa igualmente.` : "opencode no está en el PATH")
 } else {
   const detectada = parseVersion(version.stdout.trim().split("\n").pop() ?? "")
   if (!rango) {
-    lineas.push({ estado: "aviso", titulo: "package.json no declara opencodeHost; sin comprobación de versión" })
+    anota("aviso", "package.json no declara opencodeHost; sin comprobación de versión")
   } else if (isHostSupported(detectada, rango)) {
-    lineas.push({ estado: "ok", titulo: `Host ${detectada!.major}.${detectada!.minor}.${detectada!.patch} dentro del rango probado` })
+    anota("ok", `Host ${detectada!.major}.${detectada!.minor}.${detectada!.patch} dentro del rango probado`)
   } else {
-    lineas.push({ estado: "aviso", titulo: "Versión del host fuera del rango probado", detalle: formatHostWarning(detectada, rango) })
+    anota("aviso", "Versión del host fuera del rango probado", formatHostWarning(detectada, rango))
   }
 }
 
 if (saltarDeps) {
-  lineas.push({ estado: "aviso", titulo: "Dependencias omitidas por --skip-deps" })
+  anota("aviso", "Dependencias omitidas por --skip-deps")
 } else {
   const instalacion = ejecutar(["bun", "install", "--frozen-lockfile", "--ignore-scripts"], { cwd: DIR })
-  lineas.push(instalacion.ok
-    ? { estado: "ok", titulo: "Dependencias instaladas desde el lockfile" }
-    : { estado: "fallo", titulo: "bun install falló", detalle: (instalacion.stderr || instalacion.stdout).trim() })
+  anota(
+    instalacion.ok ? "ok" : "fallo",
+    instalacion.ok ? "Dependencias instaladas desde el lockfile" : "bun install falló",
+    instalacion.ok ? undefined : (instalacion.stderr || instalacion.stdout).trim(),
+  )
 }
 
 const tokenizer = join(DIR, "node_modules", "gpt-tokenizer")
-lineas.push(existsSync(tokenizer)
-  ? { estado: "ok", titulo: "gpt-tokenizer presente" }
-  : { estado: "fallo", titulo: "gpt-tokenizer ausente; ejecuta bun install en el directorio del plugin" })
+if (!existsSync(tokenizer)) {
+  anota("fallo", "gpt-tokenizer ausente", "El host no podrá importar el plugin. Ejecuta bun install en el directorio del plugin.")
+}
 
-let config: ReturnType<typeof leerConfig>
+// Nada se escribe si algo ya falló: registrar el plugin sin sus dependencias deja al host
+// con un módulo que no carga y al usuario sin indicador.
+const hayFallos = resume(lineas).fallo > 0
+if (hayFallos) {
+  anota("aviso", "No se ha tocado tui.json porque hay comprobaciones en rojo")
+  const salida = imprimir(lineas)
+  console.log()
+  console.log("Corrige lo anterior y vuelve a ejecutar bun run setup.")
+  process.exit(salida)
+}
+
+let config: TuiConfig
 try {
   config = leerConfig(rutaTui)
 } catch (error) {
-  lineas.push({ estado: "fallo", titulo: `No se pudo leer ${rutaTui}`, detalle: error instanceof Error ? error.message : String(error) })
-  imprimir(lineas)
-  process.exit(1)
+  anota("fallo", `No se pudo leer ${rutaTui}`, error instanceof Error ? error.message : String(error))
+  const salida = imprimir(lineas)
+  process.exit(salida)
 }
 
 const desconocidas = findUnknownKeys(config)
 if (desconocidas.length > 0) {
-  lineas.push({
-    estado: "aviso",
-    titulo: `tui.json tiene claves que el host no admite: ${desconocidas.join(", ")}`,
-    detalle: "El esquema no permite claves desconocidas y el host no arrancará hasta que se quiten.",
-  })
+  anota("aviso", `tui.json tiene claves que el host no admite: ${desconocidas.join(", ")}`,
+    "El esquema no permite claves desconocidas y el host no arrancará hasta que se quiten.")
 }
 
-const fusionado = mergePluginEnabled(mergePluginEntry(config))
-const escritura = escribirConfig(rutaTui, fusionado, { dryRun })
-if (!escritura.cambio) {
-  lineas.push({ estado: "ok", titulo: "tui.json ya estaba registrado; no se toca" })
-} else if (escritura.escrito) {
-  lineas.push({ estado: "ok", titulo: `Registro escrito en ${rutaTui}`, detalle: `Copia del anterior en ${escritura.respaldo}` })
-} else {
-  lineas.push({ estado: "aviso", titulo: `Simulación: se escribiría ${rutaTui}` })
+try {
+  const fusionado = mergePluginEnabled(mergePluginEntry(config))
+  const escritura = escribirConfig(rutaTui, fusionado, { dryRun })
+  if (!escritura.cambio) {
+    anota("ok", "tui.json ya estaba registrado; no se toca")
+  } else if (escritura.escrito) {
+    anota("ok", `Registro escrito en ${rutaTui}`,
+      existsSync(`${rutaTui}.bak`) ? `Copia del contenido previo en ${rutaTui}.bak` : undefined)
+  } else {
+    anota("aviso", `Simulación: se escribiría ${rutaTui}`)
+  }
+} catch (error) {
+  anota("fallo", `No se pudo registrar en ${rutaTui}`,
+    error instanceof Error ? error.message : String(error))
 }
 
 const salida = imprimir(lineas)

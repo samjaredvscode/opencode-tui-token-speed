@@ -1,5 +1,19 @@
-import { describe, expect, test } from "bun:test"
-import { parseDebugPaths, resolveConfigDir } from "./entorno"
+import { afterEach, describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { parseDebugPaths, resolveConfigDir, mismaRuta } from "./entorno"
+
+const aux: string[] = []
+afterEach(() => {
+  while (aux.length > 0) rmSync(aux.pop()!, { recursive: true, force: true })
+})
+
+function dirAux(): string {
+  const dir = mkdtempSync(join(tmpdir(), "entorno-"))
+  aux.push(dir)
+  return dir
+}
 
 const salida = `home       /home/samwsl
 data       /home/samwsl/.local/share/opencode
@@ -8,7 +22,7 @@ cache      /home/samwsl/.cache/opencode
 `
 
 const ok = (stdout: string) => () => ({ ok: true, stdout })
-const falla = () => () => ({ ok: false, stdout: "" })
+const falla = () => () => ({ ok: false, stdout: "", error: "ENOENT" })
 
 describe("parseDebugPaths", () => {
   test("extrae cada clave con su valor", () => {
@@ -58,7 +72,50 @@ describe("resolveConfigDir", () => {
   })
 
   test("tolera que el host no exista en el PATH", () => {
-    const ausente = () => { const error = new Error("no such file") as Error & { code: string }; error.code = "ENOENT"; throw error }
+    const ausente = () => ({ ok: false, stdout: "", error: "ENOENT" })
     expect(resolveConfigDir(ausente, { HOME: "/home/x" })).toBe("/home/x/.config/opencode")
+  })
+
+  test("descarta una ruta relativa impuesta por el host", () => {
+    expect(resolveConfigDir(ok("config ../../../escape\n"), { HOME: "/home/x" })).toBe("/home/x/.config/opencode")
+  })
+
+  test("resuelve los saltos de directorio en vez de dejarlos sin normalizar", () => {
+    expect(resolveConfigDir(ok("config /home/u/.config/opencode/../opencode\n"), { HOME: "/home/x" }))
+      .toBe("/home/u/.config/opencode")
+  })
+
+  test("descarta la raíz del sistema", () => {
+    expect(resolveConfigDir(ok("config /\n"), { HOME: "/home/x" })).toBe("/home/x/.config/opencode")
+  })
+
+  test("normaliza una ruta con barra final", () => {
+    expect(resolveConfigDir(ok("config /opt/opencode/\n"), { HOME: "/home/x" })).toBe("/opt/opencode")
+  })
+})
+describe("mismaRuta", () => {
+  test("reconoce la misma ruta escrita con segmentos redundantes", () => {
+    const dir = dirAux()
+    expect(mismaRuta(dir, join(dir, "sub", ".."))).toBe(true)
+    expect(mismaRuta(dir, `${dir}/`)).toBe(true)
+  })
+
+  test("reconoce un enlace simbólico que apunta al mismo sitio", () => {
+    const dir = dirAux()
+    const real = join(dir, "real")
+    mkdirSync(real)
+    symlinkSync(real, join(dir, "enlace"))
+    expect(mismaRuta(join(dir, "real"), join(dir, "enlace"))).toBe(true)
+  })
+
+  test("distingue rutas distintas", () => {
+    const dir = dirAux()
+    const otro = dirAux()
+    expect(mismaRuta(dir, otro)).toBe(false)
+  })
+
+  test("no se equivoca cuando el destino todavía no existe", () => {
+    const dir = dirAux()
+    expect(mismaRuta(dir, join(dir, "tui.json"))).toBe(false)
   })
 })

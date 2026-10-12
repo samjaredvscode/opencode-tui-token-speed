@@ -79,13 +79,21 @@ export function mergePluginEnabled(config: TuiConfig): TuiConfig {
 }
 
 // Sin el plugin, dejar el override puesto dejaría al usuario sin indicador de contexto.
+// Solo se retira el valor que puso esta herramienta; un `true` explícito del usuario se
+// respeta porque no es nuestro.
 export function restoreNativeContext(config: TuiConfig): TuiConfig {
   const restantes = habilitados(config)
-  delete restantes[NATIVE_CONTEXT]
+  if (restantes[NATIVE_CONTEXT] === false) delete restantes[NATIVE_CONTEXT]
   const siguiente: TuiConfig = { ...config }
   if (Object.keys(restantes).length === 0) delete siguiente.plugin_enabled
   else siguiente.plugin_enabled = restantes
   return siguiente
+}
+
+export function contarEntradas(config: TuiConfig, ruta: string = PLUGIN_ENTRY): number {
+  const actuales = config.plugin
+  if (!Array.isArray(actuales)) return 0
+  return actuales.filter((item) => rutaDe(item) === ruta).length
 }
 
 export function parseTuiConfig(raw: string, origen = "tui.json"): TuiConfig {
