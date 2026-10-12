@@ -4,6 +4,8 @@ Indicadores de **velocidad de generación** (tk/s) y **ocupación de contexto** 
 interfaz de OpenCode. Se apoya en los slots públicos de la interfaz, no en los
 indicadores nativos del host.
 
+[MIT](LICENSE) · Instalable con `bun run setup` · Probado en OpenCode 1.19.0 con Bun.
+
 ## Qué muestra
 
 | Indicador | Dónde | Cómo se calcula |
