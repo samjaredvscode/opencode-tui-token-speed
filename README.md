@@ -4,7 +4,59 @@ Indicadores de **velocidad de generación** (tk/s) y **ocupación de contexto** 
 interfaz de OpenCode. Se apoya en los slots públicos de la interfaz, no en los
 indicadores nativos del host.
 
-[MIT](LICENSE) · Instalable con `bun run setup` · Probado en OpenCode 1.19.0 con Bun.
+[MIT](LICENSE) · OpenCode V1 y V2 mediante entradas separadas · Bun.
+
+## OpenCode V2
+
+La integración V2 vive en `v2/tui.tsx`. Conserva `tui.tsx` y las herramientas de
+instalación originales para V1; **`setup`, `verify` y `uninstall` siguen siendo V1**
+y no administran `cli.json`. No prueban el estado de una instalación V2.
+
+Con el repositorio en `<config>/tui-plugins/token-speed` y sus dependencias instaladas,
+añade estas entradas a `plugins` en el **`cli.json` global**, conservando las demás:
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    "./tui-plugins/token-speed/v2",
+    "-opencode.sidebar.context"
+  ]
+}
+```
+
+El host resuelve `tui.tsx` dentro del directorio indicado: no registres directamente
+el archivo ni el directorio raíz del repositorio, cuya entrada sigue siendo V1.
+No añadas las dos versiones a la misma instancia. Si faltan dependencias, ejecuta
+`bun install --frozen-lockfile --ignore-scripts` en este repositorio.
+
+En V2 la fila aparece **encima del compositor**, también en sesiones hijas. El panel
+lateral muestra contexto y coste con las APIs V2. Los modelos se consultan en la
+ubicación de la sesión, no necesariamente en la del terminal.
+
+El contexto usa el último reporte de tokens, aunque `output` sea cero. Una compactación
+completada invalida los reportes previos hasta recibir uno nuevo; un límite de reversión
+ausente del historial disponible mantiene el contexto desconocido.
+
+**Diferencia de medición:** V2 no publica tiempos individuales de las partes de texto.
+La velocidad final usa tokens de salida reportados y la duración total de ese mensaje
+(`time.created` → `time.completed`), rotulada `total`. En vivo se estima el texto visible
+con BPE sobre el tiempo transcurrido desde `time.created`, rotulado `en vivo total`;
+incluye latencia y razonamiento en el denominador, y se suspende durante herramientas
+activas o reintentos. No equivale a la velocidad pura de decodificación del proveedor.
+
+Pruebas locales: `bun test` y `bun run typecheck`. El adaptador `v2-snapshot.ts` está
+cubierto por ambas; el render requiere el host. Contrato contrastado con el OpenAPI y
+las fuentes oficiales de OpenCode **2.1.3**. La comprobación de aspecto y distribución
+visual sigue siendo humana.
+
+Referencias: [plugins CLI V2](https://opencode.ai/v2/docs/build/plugins/cli),
+[carga de plugins](https://opencode.ai/v2/docs/cli/plugins) y
+[migración de plugins](https://opencode.ai/v2/docs/build/plugins/migrate-v1).
+
+## OpenCode V1
+
+Las secciones siguientes describen la integración original, probada en **1.19.0**.
 
 ## Qué muestra
 
@@ -119,11 +171,13 @@ bun run uninstall --purge    # además borra node_modules
 
 ## Qué cubren las pruebas
 
-`bun test` ejecuta **189 pruebas**:
+`bun test` ejecuta la batería original de V1 y las pruebas del adaptador V2:
 
 - **Lógica pura** — conteo y codificación de referencia, selección de mensaje, cálculo de
   velocidad y sus estados, uso de contexto y formato, límites de la estimación en vivo, y
   ciclo de vida del temporizador de refresco.
+- **Contrato V2** — mensajes con `type`, partes incrustadas, proveedor/modelo, límites de
+  reversión, compactaciones, sesiones hijas, estados, contexto y medición total/en vivo.
 - **Instalador** — fusión de `tui.json` (idempotencia, deduplicación, preservación de
   claves), resolución y validación de la ruta del host, escritura con copia de seguridad,
   rechazo de enlaces simbólicos y fallo ante directorio inexistente.
@@ -147,7 +201,8 @@ que `bun test` ejecuta en este repositorio.
 
 | | |
 |---|---|
-| `tui.tsx` | Render. Única pieza que depende del host. |
+| `tui.tsx` `v2/tui.tsx` | Entradas de render V1 y V2. Dependen del host. |
+| `v2-snapshot.ts` | Adaptación pura del contrato V2 a la lógica de indicadores. |
 | `metrics.ts` `context.ts` `live.ts` `refresh.ts` `tokenizer.ts` | Lógica de los indicadores, sin host. |
 | `config.ts` `entorno.ts` `disco.ts` `informe.ts` | Fusión de configuración, resolución de rutas, escritura e informe. |
 | `setup.ts` `verify.ts` `uninstall.ts` | CLI de línea de comandos. |

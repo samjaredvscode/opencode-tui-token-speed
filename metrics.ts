@@ -85,11 +85,19 @@ export function getTokenSpeed(
   sessionStatus?: string,
 ): TokenSpeed {
   const message = selectTokenSpeedMessage(sessionID, messages)
+  return getMessageTokenSpeed(message, message ? readParts(message.id) : [], sessionStatus)
+}
+
+export function getMessageTokenSpeed(
+  message: MessageSnapshot | undefined,
+  messageParts: readonly PartSnapshot[],
+  sessionStatus?: string,
+): TokenSpeed {
   if (!message) return { state: "unavailable" }
   if (message.error !== undefined) return { state: "error" }
   if (sessionStatus === "retry") return { state: "retry" }
-  const parts = readParts(message.id).filter((part) =>
-    part.sessionID === sessionID && part.messageID === message.id,
+  const parts = messageParts.filter((part) =>
+    part.sessionID === message.sessionID && part.messageID === message.id,
   )
   const { created, completed } = message.time
   if (completed === undefined) {

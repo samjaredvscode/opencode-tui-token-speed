@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "version": "1.0.0",
+  "exports": {
+    "./tui": "./v2/tui.tsx"
+  },
   "scripts": {
     "setup": "bun run setup.ts",
     "verify": "bun run verify.ts",
     "uninstall": "bun run uninstall.ts",
-    "typecheck": "tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --lib es2023,dom --types bun config.ts disco.ts entorno.ts informe.ts metrics.ts context.ts live.ts refresh.ts tokenizer.ts setup.ts verify.ts uninstall.ts"
+    "typecheck": "tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --lib es2023,dom --types bun config.ts disco.ts entorno.ts informe.ts metrics.ts context.ts live.ts refresh.ts tokenizer.ts v2-snapshot.ts setup.ts verify.ts uninstall.ts"
   },
   "opencodeHost": {
     "tested": "1.19.0",

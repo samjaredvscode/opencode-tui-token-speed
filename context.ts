@@ -40,7 +40,11 @@ export function getContextUsage(
   if (!last?.tokens) return unknownUsage()
   const model = last.modelID === undefined ? undefined
     : providers.find((provider) => provider.id === last.providerID)?.models[last.modelID]
-  const context = model?.limit?.context
+  return getMessageContextUsage(last, model?.limit?.context)
+}
+
+export function getMessageContextUsage(last: ContextMessageSnapshot | undefined, context?: number): ContextUsage {
+  if (!last?.tokens) return unknownUsage()
   const limit = isTokenCount(context) && context > 0 ? context : null
   const values = [last.tokens.input, last.tokens.output, last.tokens.reasoning, last.tokens.cache?.read, last.tokens.cache?.write]
   const total = values.every(isTokenCount) ? values.reduce((sum, value) => sum + value, 0) : null
